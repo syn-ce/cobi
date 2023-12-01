@@ -64,10 +64,6 @@ bit_count *count_bits(char *path) {
     bit_c->zeros = 0;
     bit_c->ones = 0;
 
-    bit_c->total = 0;
-    bit_c->zeros = 0;
-    bit_c->ones = 0;
-
     // Read the file byte by byte
     uint8_t byte_masks[] = {1, 2, 4, 8, 16, 32, 64, 128};
 
