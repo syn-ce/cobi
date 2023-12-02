@@ -4,6 +4,9 @@
 #include <inttypes.h>
 #include <dirent.h>
 #include <string.h>
+#include <sys/types.h>
+#include <sys/stat.h>
+#include <unistd.h>
 
 int nr_digits(uint64_t n) {
     if (n < 10) return 1;
@@ -86,6 +89,13 @@ bit_count *count_bits(char *path) {
 }
 
 int count_files(char *path) {
+    struct stat path_stat;
+    stat(path, &path_stat);
+    int is_file = S_ISREG(path_stat.st_mode);
+
+    if (is_file)
+        return 1;
+
     int file_count = 0;
     DIR * dirp;
     struct dirent * entry;
@@ -111,6 +121,15 @@ int count_files(char *path) {
 
 
 bit_count *count_bits_in_subdirectories(char *path) {
+   
+    // Check if path is file or directory
+    struct stat path_stat;
+    stat(path, &path_stat);
+    int is_file = S_ISREG(path_stat.st_mode);
+
+    if (is_file)
+        return count_bits(path); 
+    
     DIR * dirp;
     struct dirent * entry;
 
@@ -124,6 +143,7 @@ bit_count *count_bits_in_subdirectories(char *path) {
     if (dirp == NULL) {
         fprintf(stderr, "Error when trying to open path %s\n", path); return bit_c;
     }
+
     while ((entry = readdir(dirp)) != NULL) {
         if (entry->d_type == DT_REG) { /* If the entry is a regular file */
             char *fullpath = malloc(strlen(entry->d_name) + strlen(path) + 2);
