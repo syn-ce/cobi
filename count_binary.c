@@ -2,6 +2,8 @@
 #include <stdint.h>
 #include <stdlib.h>
 #include <inttypes.h>
+#include <dirent.h>
+#include <string.h>
 
 int nr_digits(uint64_t n) {
     if (n < 10) return 1;
@@ -33,7 +35,7 @@ void print_with_delim(uint64_t n, int leading_whitespace) {
     sprintf(buffer, "%" PRIu64, n);
     printf("%*s", leading_whitespace, "");
     for (int i = 0; i < nr_dig; i++) {
-        if (digits_until_next_whitespace-- == 0) digits_until_next_whitespace = 3, printf(" ");
+        if (digits_until_next_whitespace-- == 0) digits_until_next_whitespace = 2, printf(" ");
         printf("%c", buffer[i]);
     }
 }
@@ -83,13 +85,84 @@ bit_count *count_bits(char *path) {
     return bit_c;
 }
 
+int count_files(char *path) {
+    int file_count = 0;
+    DIR * dirp;
+    struct dirent * entry;
+    
+    dirp = opendir(path); /* There should be error handling after this */
+    if (dirp == NULL) {
+        fprintf(stderr, "Error when trying to open path %s\n", path); return file_count;
+    }
+    while ((entry = readdir(dirp)) != NULL) {
+        if (entry->d_type == DT_REG) { /* If the entry is a regular file */
+             file_count++;
+        } else if (entry->d_type == DT_DIR && strcmp(entry->d_name,".") != 0 && strcmp(entry->d_name,"..") != 0) {
+            char *fullpath = malloc(strlen(entry->d_name) + strlen(path) + 2);
+            if (fullpath == NULL) fprintf(stderr, "Error while allocating"), exit(1);
+            sprintf(fullpath, "%s/%s", path, entry->d_name);
+            file_count += count_files(fullpath);
+            free(fullpath);
+        };
+    }
+    closedir(dirp);
+    return file_count;
+}
+
+
+bit_count *count_bits_in_subdirectories(char *path) {
+    DIR * dirp;
+    struct dirent * entry;
+
+    bit_count *bit_c = malloc(sizeof(bit_count));
+    if (bit_c == NULL) perror("Error during malloc\n"), exit(1);
+    bit_c->total = 0;
+    bit_c->zeros = 0;
+    bit_c->ones = 0;
+    
+    dirp = opendir(path); /* There should be error handling after this */
+    if (dirp == NULL) {
+        fprintf(stderr, "Error when trying to open path %s\n", path); return bit_c;
+    }
+    while ((entry = readdir(dirp)) != NULL) {
+        if (entry->d_type == DT_REG) { /* If the entry is a regular file */
+            char *fullpath = malloc(strlen(entry->d_name) + strlen(path) + 2);
+            if (fullpath == NULL) fprintf(stderr, "Error while allocating"), exit(1);
+            sprintf(fullpath, "%s/%s", path, entry->d_name);
+            bit_count *bit_c_file = count_bits(fullpath);
+            free(fullpath);
+            bit_c->total += bit_c_file->total;
+            bit_c->zeros += bit_c_file->zeros;
+            bit_c->ones += bit_c_file->ones;
+            free(bit_c_file);
+        } else if (entry->d_type == DT_DIR && strcmp(entry->d_name,".") != 0 && strcmp(entry->d_name,"..") != 0) {
+            char *fullpath = malloc(strlen(entry->d_name) + strlen(path) + 2);
+            if (fullpath == NULL) fprintf(stderr, "Error while allocating"), exit(1);
+            sprintf(fullpath, "%s/%s", path, entry->d_name);
+            bit_count *bit_c_rec = count_bits_in_subdirectories(fullpath);
+            bit_c->total += bit_c_rec->total;
+            bit_c->zeros += bit_c_rec->zeros;
+            bit_c->ones += bit_c_rec->ones;
+            free(fullpath);
+            free(bit_c_rec);
+        };
+    }
+    closedir(dirp);
+    return bit_c;
+}
+
 int main(int argc, char **argv) {
     if (argc < 2) {
-        fprintf(stderr, "File name needs to be specified as input parameter.\n");
+        fprintf(stderr, "Please specify the path of the directory.\n");
         exit(1);
     }
 
-    bit_count *bit_c = count_bits(argv[1]);
+    printf("This will look through %d files. Proceed? [y/n]", count_files(argv[1]));
+    char answer = 'b';
+    scanf(" %c", &answer);
+    if (answer != 'y') printf("%c", answer), exit(0);
+
+    bit_count *bit_c = count_bits_in_subdirectories(argv[1]);
 
     // Calc 0:1 ratio
     double ratio01;
