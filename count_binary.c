@@ -29,46 +29,50 @@ int nr_digits(uint64_t n) {
     return -1;
 }
 
-void print_with_delim(uint64_t n, int leading_whitespace) {
-    int nr_dig = nr_digits(n);
-    int digits_until_next_whitespace = nr_dig % 3;
-    if (digits_until_next_whitespace == 0) digits_until_next_whitespace = 3;
-    char buffer[21];  // 20 digits for uint64_t + 1 for null terminator
-    // Use sprintf to convert uint64_t to string
-    sprintf(buffer, "%" PRIu64, n);
-    printf("%*s", leading_whitespace, "");
-    for (int i = 0; i < nr_dig; i++) {
-        if (digits_until_next_whitespace-- == 0) digits_until_next_whitespace = 2, printf(" ");
-        printf("%c", buffer[i]);
-    }
+// Returns length of output, starting from the first digit
+int print_with_delim(uint64_t n, int min_print_length) {
+  int print_length = 0;
+  int nr_dig = nr_digits(n);
+  int digits_until_next_whitespace = nr_dig % 3;
+  if (digits_until_next_whitespace == 0) digits_until_next_whitespace = 3;
+  int nr_whitespace_between = (nr_dig - digits_until_next_whitespace) / 3;
+  int leading_whitespace = min_print_length - nr_dig - nr_whitespace_between;
+  if (leading_whitespace < 0) leading_whitespace = 0;
+
+  char buffer[21];  // 20 digits for uint64_t + 1 for null terminator
+  // Use sprintf to convert uint64_t to string
+  sprintf(buffer, "%" PRIu64, n);
+  printf("%*s", leading_whitespace, "");
+  for (int i = 0; i < nr_dig; i++) {
+    if (digits_until_next_whitespace-- == 0) digits_until_next_whitespace = 2, printf(" "), print_length++;
+    printf("%c", buffer[i]);
+    print_length++;
+  }
+  return print_length;
 }
 
-struct bit_count {
+typedef struct bit_count {
     uint64_t total;
     uint64_t zeros;
     uint64_t ones;
-};
-
-typedef struct bit_count bit_count;
+} bit_count;
 
 bit_count *count_bits(char *path) {
-    FILE *file;
-
-    // Open file in binary mode
-    file = fopen(path, "rb");
-
     bit_count *bit_c = malloc(sizeof(bit_count));
     if (bit_c == NULL) perror("Error during malloc\n"), exit(1);
-
-    if (file == NULL) {
-        fprintf(stderr, "Error opening file %s\n", path);
-        return bit_c;
-    }
 
     bit_c->total = 0;
     bit_c->zeros = 0;
     bit_c->ones = 0;
 
+    FILE *file;
+    // Open file in binary mode
+    file = fopen(path, "rb");
+
+    if (file == NULL) {
+        fprintf(stderr, "Could not open file %s -- Ignoring\n", path);
+        return bit_c;
+    }
     // Read the file byte by byte
     uint8_t byte_masks[] = {1, 2, 4, 8, 16, 32, 64, 128};
 
@@ -88,6 +92,20 @@ bit_count *count_bits(char *path) {
     return bit_c;
 }
 
+int is_file(char *path) {
+    struct stat path_stat;
+    stat(path, &path_stat);
+    int is_file = S_ISREG(path_stat.st_mode);
+    return is_file;
+}
+
+int is_directory(char *path) {
+    struct stat path_stat;
+    stat(path, &path_stat);
+    int is_directory = S_ISDIR(path_stat.st_mode);
+    return is_directory;
+}
+
 int count_files(char *path) {
     struct stat path_stat;
     stat(path, &path_stat);
@@ -97,17 +115,18 @@ int count_files(char *path) {
         return 1;
 
     int file_count = 0;
-    DIR * dirp;
-    struct dirent * entry;
+    DIR *dirp;
+    struct dirent *entry;
     
     dirp = opendir(path); /* There should be error handling after this */
     if (dirp == NULL) {
-        fprintf(stderr, "Error when trying to open path %s\n", path); return file_count;
+        fprintf(stderr, "Error when trying to open directory %s\n", path); return file_count;
     }
     while ((entry = readdir(dirp)) != NULL) {
-        if (entry->d_type == DT_REG) { /* If the entry is a regular file */
+        stat(entry->d_name, &path_stat);
+        if (S_ISREG(path_stat.st_mode)) { /* If the entry is a regular file */
              file_count++;
-        } else if (entry->d_type == DT_DIR && strcmp(entry->d_name,".") != 0 && strcmp(entry->d_name,"..") != 0) {
+        } else if (S_ISDIR(path_stat.st_mode) && strcmp(entry->d_name,".") != 0 && strcmp(entry->d_name,"..") != 0) { // Is directory
             char *fullpath = malloc(strlen(entry->d_name) + strlen(path) + 2);
             if (fullpath == NULL) fprintf(stderr, "Error while allocating"), exit(1);
             sprintf(fullpath, "%s/%s", path, entry->d_name);
@@ -123,12 +142,8 @@ int count_files(char *path) {
 bit_count *count_bits_in_subdirectories(char *path) {
    
     // Check if path is file or directory
-    struct stat path_stat;
-    stat(path, &path_stat);
-    int is_file = S_ISREG(path_stat.st_mode);
-
-    if (is_file)
-        return count_bits(path); 
+    if (is_file(path))
+      return count_bits(path); 
     
     DIR * dirp;
     struct dirent * entry;
@@ -145,20 +160,18 @@ bit_count *count_bits_in_subdirectories(char *path) {
     }
 
     while ((entry = readdir(dirp)) != NULL) {
-        if (entry->d_type == DT_REG) { /* If the entry is a regular file */
-            char *fullpath = malloc(strlen(entry->d_name) + strlen(path) + 2);
-            if (fullpath == NULL) fprintf(stderr, "Error while allocating"), exit(1);
-            sprintf(fullpath, "%s/%s", path, entry->d_name);
+        char *fullpath = malloc(strlen(entry->d_name) + strlen(path) + 2);
+        if (fullpath == NULL) fprintf(stderr, "Error while allocating"), exit(1);
+        sprintf(fullpath, "%s/%s", path, entry->d_name);
+
+        if (is_file(fullpath)) { /* If the entry is a regular file */
             bit_count *bit_c_file = count_bits(fullpath);
             free(fullpath);
             bit_c->total += bit_c_file->total;
             bit_c->zeros += bit_c_file->zeros;
             bit_c->ones += bit_c_file->ones;
             free(bit_c_file);
-        } else if (entry->d_type == DT_DIR && strcmp(entry->d_name,".") != 0 && strcmp(entry->d_name,"..") != 0) {
-            char *fullpath = malloc(strlen(entry->d_name) + strlen(path) + 2);
-            if (fullpath == NULL) fprintf(stderr, "Error while allocating"), exit(1);
-            sprintf(fullpath, "%s/%s", path, entry->d_name);
+        } else if (is_directory(fullpath) && strcmp(entry->d_name,".") != 0 && strcmp(entry->d_name,"..") != 0) {
             bit_count *bit_c_rec = count_bits_in_subdirectories(fullpath);
             bit_c->total += bit_c_rec->total;
             bit_c->zeros += bit_c_rec->zeros;
@@ -196,15 +209,15 @@ int main(int argc, char **argv) {
     int max_nr_digits = nr_digits(bit_c->total);
 
     printf("B: ");
-    print_with_delim(bit_c->total, 0);
+    int print_length = print_with_delim(bit_c->total, 0);
     printf("\n");
 
     printf("0: ");
-    print_with_delim(bit_c->zeros, max_nr_digits - nr_digits(bit_c->zeros));
+    print_with_delim(bit_c->zeros, print_length);
     printf("  (%lf)\n", share0);
 
     printf("1: ");
-    print_with_delim(bit_c->ones, max_nr_digits - nr_digits(bit_c->ones));
+    print_with_delim(bit_c->ones, print_length);
     printf("  (%lf)\n", share1);
 
     return 0;
