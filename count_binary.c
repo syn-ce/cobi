@@ -7,6 +7,11 @@
 #include <sys/types.h>
 #include <sys/stat.h>
 #include <unistd.h>
+#include <stdarg.h>
+
+int max(int a, int b) {
+  return a > b ? a : b;
+}
 
 int nr_digits(uint64_t n) {
     if (n < 10) return 1;
@@ -57,9 +62,35 @@ typedef struct bit_count {
     uint64_t ones;
 } bit_count;
 
-bit_count *count_bits(char *path) {
+#define PBSTR "||||||||||||||||||||||||||||||||||||||||||||||||||||||||||||"
+#define PBWIDTH 60
+
+void print_progress(double percentage) {
+    int val = (int) (percentage * 100);
+    int lpad = (int) (percentage * PBWIDTH);
+    int rpad = PBWIDTH - lpad;
+    printf("\r%3d%% [%.*s%*s]", val, lpad, PBSTR, rpad, "");
+    fflush(stdout);
+}
+
+void clear_progress_bar() {
+  printf("\r%*s\r", PBWIDTH + 7, ""); // Clear line (7 is just enough to do remove the progress bar entirely)
+}
+
+void print_before_progress(double percentage, FILE *f, char *message, ...) {
+  va_list args;
+  va_start(args, message);
+
+  clear_progress_bar();
+  vprintf(message, args);
+  va_end(args);
+
+  print_progress(percentage);
+}
+
+bit_count *count_bits(char *path, int nr_files, int nr_files_counted) {
     bit_count *bit_c = malloc(sizeof(bit_count));
-    if (bit_c == NULL) perror("Error during malloc\n"), exit(1);
+    if (bit_c == NULL) perror("Could not allocate\n"), exit(1);
 
     bit_c->total = 0;
     bit_c->zeros = 0;
@@ -70,12 +101,12 @@ bit_count *count_bits(char *path) {
     file = fopen(path, "rb");
 
     if (file == NULL) {
-        fprintf(stderr, "Could not open file %s -- Ignoring\n", path);
+        print_before_progress(nr_files_counted / (double) nr_files, stderr, "Could not open file %s -- Ignoring\n", path);
         return bit_c;
     }
-    // Read the file byte by byte
     uint8_t byte_masks[] = {1, 2, 4, 8, 16, 32, 64, 128};
 
+    // Read file byte by byte
     int byte;
     while ((byte = fgetc(file)) != EOF) {
         // Count ones in byte
@@ -86,24 +117,9 @@ bit_count *count_bits(char *path) {
         bit_c->total += 8;
     }
 
-    // Close file
     fclose(file);
 
     return bit_c;
-}
-
-int is_file(char *path) {
-    struct stat path_stat;
-    stat(path, &path_stat);
-    int is_file = S_ISREG(path_stat.st_mode);
-    return is_file;
-}
-
-int is_directory(char *path) {
-    struct stat path_stat;
-    stat(path, &path_stat);
-    int is_directory = S_ISDIR(path_stat.st_mode);
-    return is_directory;
 }
 
 int count_files(char *path) {
@@ -123,62 +139,69 @@ int count_files(char *path) {
         fprintf(stderr, "Error when trying to open directory %s\n", path); return file_count;
     }
     while ((entry = readdir(dirp)) != NULL) {
-        stat(entry->d_name, &path_stat);
+        char *fullpath = malloc(strlen(entry->d_name) + strlen(path) + 2);
+        if (fullpath == NULL) fprintf(stderr, "Could not allocate"), exit(1);
+        sprintf(fullpath, "%s/%s", path, entry->d_name);
+        lstat(fullpath, &path_stat);
+//        printf("%s   :   %u\n", entry->d_name, path_stat.st_mode);
         if (S_ISREG(path_stat.st_mode)) { /* If the entry is a regular file */
-             file_count++;
+            file_count++;
         } else if (S_ISDIR(path_stat.st_mode) && strcmp(entry->d_name,".") != 0 && strcmp(entry->d_name,"..") != 0) { // Is directory
-            char *fullpath = malloc(strlen(entry->d_name) + strlen(path) + 2);
-            if (fullpath == NULL) fprintf(stderr, "Error while allocating"), exit(1);
-            sprintf(fullpath, "%s/%s", path, entry->d_name);
             file_count += count_files(fullpath);
-            free(fullpath);
-        };
+        }
+        free(fullpath);
     }
     closedir(dirp);
     return file_count;
 }
+int PRINT_INTERVAL = 1000;
 
-
-bit_count *count_bits_in_subdirectories(char *path) {
+bit_count *count_bits_in_children(char *path, int nr_files, int *nr_current_file) {
    
     // Check if path is file or directory
-    if (is_file(path))
-      return count_bits(path); 
+    struct stat path_stat;
+    stat(path, &path_stat);
     
+    if (S_ISREG(path_stat.st_mode)) {
+        if (++(*nr_current_file) % PRINT_INTERVAL == 0 || *nr_current_file == nr_files) print_progress(*nr_current_file / (double) nr_files);
+        return count_bits(path, nr_files, *nr_current_file); 
+    }
+
     DIR * dirp;
     struct dirent * entry;
 
-    bit_count *bit_c = malloc(sizeof(bit_count));
-    if (bit_c == NULL) perror("Error during malloc\n"), exit(1);
+    bit_count *bit_c = malloc(sizeof(*bit_c));
+    if (bit_c == NULL) perror("Could not allocate\n"), exit(1);
     bit_c->total = 0;
     bit_c->zeros = 0;
     bit_c->ones = 0;
     
     dirp = opendir(path); /* There should be error handling after this */
     if (dirp == NULL) {
-        fprintf(stderr, "Error when trying to open path %s\n", path); return bit_c;
+        print_before_progress((*nr_current_file) / (double) nr_files, stderr, "Error when trying to open path %s\n", path); return bit_c;
     }
 
     while ((entry = readdir(dirp)) != NULL) {
         char *fullpath = malloc(strlen(entry->d_name) + strlen(path) + 2);
-        if (fullpath == NULL) fprintf(stderr, "Error while allocating"), exit(1);
+        if (fullpath == NULL) fprintf(stderr, "Could not allocate"), exit(1);
         sprintf(fullpath, "%s/%s", path, entry->d_name);
-
-        if (is_file(fullpath)) { /* If the entry is a regular file */
-            bit_count *bit_c_file = count_bits(fullpath);
-            free(fullpath);
+        lstat(fullpath, &path_stat);
+ 
+        if (S_ISREG(path_stat.st_mode)) { // Entry is a regular file
+            bit_count *bit_c_file = count_bits(fullpath, nr_files, *nr_current_file);
             bit_c->total += bit_c_file->total;
             bit_c->zeros += bit_c_file->zeros;
             bit_c->ones += bit_c_file->ones;
             free(bit_c_file);
-        } else if (is_directory(fullpath) && strcmp(entry->d_name,".") != 0 && strcmp(entry->d_name,"..") != 0) {
-            bit_count *bit_c_rec = count_bits_in_subdirectories(fullpath);
+            if (++(*nr_current_file) % PRINT_INTERVAL == 0 || *nr_current_file == nr_files) print_progress(*nr_current_file / (double) nr_files);
+        } else if (S_ISDIR(path_stat.st_mode) && strcmp(entry->d_name,".") != 0 && strcmp(entry->d_name,"..") != 0) { // Is directory
+            bit_count *bit_c_rec = count_bits_in_children(fullpath, nr_files, nr_current_file);
             bit_c->total += bit_c_rec->total;
             bit_c->zeros += bit_c_rec->zeros;
             bit_c->ones += bit_c_rec->ones;
-            free(fullpath);
             free(bit_c_rec);
         };
+        free(fullpath);
     }
     closedir(dirp);
     return bit_c;
@@ -190,12 +213,21 @@ int main(int argc, char **argv) {
         exit(1);
     }
 
-    printf("This will look through %d files. Proceed? [y/n]", count_files(argv[1]));
+    int nr_files = count_files(argv[1]);
+    printf("This will look through %d files. Proceed? [y/n]", nr_files);
     char answer = 'b';
     scanf(" %c", &answer);
     if (answer != 'y') printf("%c", answer), exit(0);
+    printf("\n");
 
-    bit_count *bit_c = count_bits_in_subdirectories(argv[1]);
+    PRINT_INTERVAL = max(1, nr_files / 100); // Want to output the progress-bar ~ 100 times
+    print_progress(0.0);
+
+    int nr_current_file = 0;
+    bit_count *bit_c = count_bits_in_children(argv[1], nr_files, &nr_current_file);
+
+    clear_progress_bar(); // Remove progress bar once its done
+    printf("\n");
 
     // Calc 0:1 ratio
     double ratio01;
