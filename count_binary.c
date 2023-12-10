@@ -77,7 +77,7 @@ void clear_progress_bar() {
   printf("\r%*s\r", PBWIDTH + 7, ""); // Clear line (7 is just enough to do remove the progress bar entirely)
 }
 
-void print_before_progress(double percentage, FILE *f, char *message, ...) {
+void print_before_progress_bar(double percentage, FILE *f, char *message, ...) {
   va_list args;
   va_start(args, message);
 
@@ -101,7 +101,7 @@ bit_count *count_bits(char *path, int nr_files, int nr_files_counted) {
     file = fopen(path, "rb");
 
     if (file == NULL) {
-        print_before_progress(nr_files_counted / (double) nr_files, stderr, "Could not open file %s -- Ignoring\n", path);
+        print_before_progress_bar(nr_files_counted / (double) nr_files, stderr, "Could not open file %s -- Ignoring\n", path);
         return bit_c;
     }
     uint8_t byte_masks[] = {1, 2, 4, 8, 16, 32, 64, 128};
@@ -154,6 +154,7 @@ int count_files(char *path) {
     closedir(dirp);
     return file_count;
 }
+
 int PRINT_INTERVAL = 1000;
 
 bit_count *count_bits_in_children(char *path, int nr_files, int *nr_current_file) {
@@ -178,7 +179,7 @@ bit_count *count_bits_in_children(char *path, int nr_files, int *nr_current_file
     
     dirp = opendir(path); /* There should be error handling after this */
     if (dirp == NULL) {
-        print_before_progress((*nr_current_file) / (double) nr_files, stderr, "Error when trying to open path %s\n", path); return bit_c;
+        print_before_progress_bar((*nr_current_file) / (double) nr_files, stderr, "Error when trying to open path %s\n", path); return bit_c;
     }
 
     while ((entry = readdir(dirp)) != NULL) {
