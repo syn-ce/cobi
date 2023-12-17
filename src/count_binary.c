@@ -8,6 +8,7 @@
 #include <sys/stat.h>
 #include <unistd.h>
 #include <stdarg.h>
+#include "count_binary.h"
 #include "progress_bar.h"
 
 int max(int a, int b) {
@@ -56,12 +57,6 @@ int print_with_delim(uint64_t n, int min_print_length) {
   }
   return print_length;
 }
-
-typedef struct bit_count {
-    uint64_t total;
-    uint64_t zeros;
-    uint64_t ones;
-} bit_count;
 
 bit_count *count_bits(char *path, int nr_files, int nr_files_counted) {
     bit_count *bit_c = malloc(sizeof(bit_count));
