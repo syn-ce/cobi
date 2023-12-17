@@ -180,6 +180,7 @@ bit_count *count_bits_in_children(char *path, int nr_files, int *nr_current_file
 
 void count_binary(char *path) {
     int nr_files = count_files(path);
+    if (nr_files == 0) fprintf(stderr, "Could not open path %s.\n", path), exit(1);
     printf("This will look through %d file", nr_files);
     if (nr_files != 1) printf("s");
     printf(". Proceed? [y/n]");
