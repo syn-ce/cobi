@@ -178,13 +178,8 @@ bit_count *count_bits_in_children(char *path, int nr_files, int *nr_current_file
     return bit_c;
 }
 
-int main(int argc, char **argv) {
-    if (argc < 2) {
-        fprintf(stderr, "Please specify the path of the directory.\n");
-        exit(1);
-    }
-
-    int nr_files = count_files(argv[1]);
+void count_binary(char *path) {
+    int nr_files = count_files(path);
     printf("This will look through %d file", nr_files);
     if (nr_files != 1) printf("s");
     printf(". Proceed? [y/n]");
@@ -197,7 +192,7 @@ int main(int argc, char **argv) {
     print_progress(0.0);
 
     int nr_current_file = 0;
-    bit_count *bit_c = count_bits_in_children(argv[1], nr_files, &nr_current_file);
+    bit_count *bit_c = count_bits_in_children(path, nr_files, &nr_current_file);
 
     clear_progress_bar(); // Remove progress bar once its done
     printf("\n");
@@ -224,6 +219,4 @@ int main(int argc, char **argv) {
     printf("1: ");
     print_with_delim(bit_c->ones, print_length);
     printf("  (%lf)\n", share1);
-
-    return 0;
 }

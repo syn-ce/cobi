@@ -14,4 +14,6 @@ int count_files(char *path);
 
 bit_count *count_bits_in_children(char *path, int nr_files, int *nr_current_file);
 
+void count_binary(char * path);
+
 #endif // COUNT_BINARY_H
