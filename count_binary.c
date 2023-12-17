@@ -190,7 +190,9 @@ int main(int argc, char **argv) {
     }
 
     int nr_files = count_files(argv[1]);
-    printf("This will look through %d files. Proceed? [y/n]", nr_files);
+    printf("This will look through %d file", nr_files);
+    if (nr_files != 1) printf("s");
+    printf(". Proceed? [y/n]");
     char answer = 'b';
     scanf(" %c", &answer);
     if (answer != 'y') printf("%c", answer), exit(0);
