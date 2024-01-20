@@ -1,8 +1,6 @@
 # Cobi
 
-_Find out how much void there is in your files._
-
-Cobi counts the ones and zeros in any file.
+Count the ones and zeros in any file (Linux).
 
 ## Demo
 
